@@ -249,10 +249,30 @@ class ChzzkChatManager(QObject):
 
     # ── 채팅 연결 ─────────────────────────────────────────────────────────
 
+    async def _validate_channel(self, channel_id: str) -> tuple[bool, str]:
+        """Validate that the channel exists and is accessible."""
+        try:
+            # Attempt to fetch channel info to verify it exists
+            # get_channel takes a list of channel IDs
+            channels = await self._client.get_channel([channel_id])
+            if not channels or channels[0] is None:
+                return False, "채널을 찾을 수 없습니다. 채널 ID를 확인해주세요."
+            return True, ""
+        except Exception as e:
+            log.warning("Channel validation failed: %s", e)
+            return False, f"채널 확인 실패: {e}"
+
     async def connect_chat(self, channel_id: str) -> None:
         if not self._user_client:
             self.chat_status_changed.emit("연결 실패: 먼저 로그인하세요")
             return
+
+        # Validate channel before attempting connection
+        is_valid, error_msg = await self._validate_channel(channel_id)
+        if not is_valid:
+            self.chat_status_changed.emit(f"연결 실패: {error_msg}")
+            return
+
         await self._cancel_chat_task()
         self.chat_status_changed.emit("채팅 연결 중...")
         self._chat_task = asyncio.ensure_future(self._do_connect_chat(channel_id))
