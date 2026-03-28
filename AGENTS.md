@@ -137,10 +137,180 @@ uv build
 
 ## Testing
 
-Currently no test suite exists. When adding tests:
-- Use pytest
-- Mock external services (Chzzk API, TTS providers)
-- Test UI components with QtTest
+### Test Framework
+- **pytest**: Primary test framework
+- **pytest-asyncio**: For testing async code
+- **pytest-qt**: For Qt UI testing
+- **unittest.mock**: For mocking
+
+### Test Structure
+```
+tests/
+├── conftest.py              # Shared fixtures and configuration
+├── test_db.py               # Database operation tests
+├── test_config.py           # Configuration tests
+├── test_filters.py          # Message filtering tests
+├── audio/
+│   └── test_player.py       # Audio player tests
+├── chat/
+│   └── test_client.py       # Chat client tests
+├── tts/
+│   ├── test_engine.py       # TTS engine tests
+│   ├── test_edge_tts.py     # Edge TTS provider tests
+│   └── test_google_tts.py   # Google TTS provider tests
+└── ui/
+    └── test_main_window.py  # UI component tests
+```
+
+### Running Tests
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=src/chzzk_tts --cov-report=html
+
+# Run specific test file
+pytest tests/test_filters.py
+
+# Run with verbose output
+pytest -v
+
+# Run Qt tests (requires display)
+pytest tests/ui/
+```
+
+### Test Categories
+
+#### Unit Tests
+- Test individual functions and classes in isolation
+- Mock all external dependencies (API calls, database, audio)
+- Fast execution, no side effects
+
+#### Integration Tests
+- Test component interactions
+- Use test database (in-memory SQLite)
+- Mock external services only (Chzzk API, TTS providers)
+
+#### UI Tests
+- Use `pytest-qt` with QtBot
+- Test signal/slot connections
+- Verify UI state changes
+- Mock all business logic
+
+### Mocking Strategies
+
+#### External Services
+```python
+# Mock Chzzk API
+@pytest.fixture
+def mock_chzzk_client():
+    with patch('chzzk_tts.chat.client.ChzzkClient') as mock:
+        yield mock
+
+# Mock TTS provider
+@pytest.fixture
+def mock_tts_provider():
+    provider = Mock(spec=TTSProvider)
+    provider.synthesize = AsyncMock(return_value=b'fake_audio_data')
+    return provider
+
+# Mock database
+@pytest.fixture
+def test_db():
+    db = Database(':memory:')  # In-memory SQLite
+    db.init_tables()
+    yield db
+    db.close()
+```
+
+#### Async Testing
+```python
+import pytest
+
+@pytest.mark.asyncio
+async def test_async_function():
+    result = await some_async_function()
+    assert result == expected
+
+# For Qt async, use qasync test pattern
+@pytest.mark.asyncio
+async def test_qt_async(qtbot):
+    widget = SomeWidget()
+    qtbot.addWidget(widget)
+    
+    # Trigger async operation
+    widget.button.click()
+    
+    # Wait for signal
+    qtbot.waitSignal(widget.operation_complete, timeout=1000)
+```
+
+### Qt Testing Best Practices
+
+#### Testing Signals
+```python
+def test_button_emits_signal(qtbot):
+    widget = MyWidget()
+    qtbot.addWidget(widget)
+    
+    with qtbot.waitSignal(widget.button_clicked) as blocker:
+        qtbot.mouseClick(widget.button, Qt.LeftButton)
+    
+    assert blocker.signal_triggered
+```
+
+#### Testing Async Slots
+```python
+@pytest.mark.asyncio
+async def test_async_slot(qtbot):
+    widget = MyWidget()
+    qtbot.addWidget(widget)
+    
+    # Call async slot
+    await widget.async_operation()
+    
+    # Verify state change
+    assert widget.label.text() == 'Completed'
+```
+
+### Test Configuration
+
+#### conftest.py
+```python
+import pytest
+from PySide6.QtWidgets import QApplication
+
+@pytest.fixture(scope='session')
+def qapp():
+    """Create QApplication for Qt tests."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    yield app
+
+@pytest.fixture
+def event_loop(qapp):
+    """Provide event loop for async tests."""
+    import asyncio
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+```
+
+### Code Coverage Goals
+- Core logic (filters, config, db): >90%
+- TTS providers: >80%
+- UI components: >60%
+- Overall: >75%
+
+### Continuous Integration
+When setting up CI:
+- Run on Python 3.12+
+- Test on Windows, macOS, Linux
+- Install PySide6 dependencies (may need `apt-get install libgl1` on Linux)
+- Use `pytest-xvfb` for headless Qt tests on Linux
+- Upload coverage reports to codecov
 
 ## Important Notes
 
