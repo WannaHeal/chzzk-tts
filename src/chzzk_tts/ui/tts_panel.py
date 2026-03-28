@@ -27,6 +27,7 @@ class TTSPanel(QWidget):
     volume_changed = Signal(float)
     max_length_changed = Signal(int)
     skip_commands_changed = Signal(bool)
+    skip_emojis_changed = Signal(bool)
     clear_queue_requested = Signal()
     google_credentials_changed = Signal(str)
     default_voice_changed = Signal(str, str)  # language, voice_id
@@ -42,7 +43,9 @@ class TTSPanel(QWidget):
         self.tts_checkbox = QCheckBox("TTS 활성화")
         self.tts_checkbox.setChecked(True)
         self.tts_checkbox.stateChanged.connect(
-            lambda state: self.tts_enabled_changed.emit(state == Qt.CheckState.Checked.value)
+            lambda state: self.tts_enabled_changed.emit(
+                state == Qt.CheckState.Checked.value
+            )
         )
         layout.addWidget(self.tts_checkbox)
 
@@ -152,9 +155,22 @@ class TTSPanel(QWidget):
         self.skip_commands_check = QCheckBox("명령어 스킵 (! 로 시작)")
         self.skip_commands_check.setChecked(True)
         self.skip_commands_check.stateChanged.connect(
-            lambda state: self.skip_commands_changed.emit(state == Qt.CheckState.Checked.value)
+            lambda state: self.skip_commands_changed.emit(
+                state == Qt.CheckState.Checked.value
+            )
         )
         msg_layout.addRow(self.skip_commands_check)
+
+        self.skip_emojis_check = QCheckBox(
+            "이모티콘만 있는 메시지 스킵 ({:emoji:} 형식)"
+        )
+        self.skip_emojis_check.setChecked(False)
+        self.skip_emojis_check.stateChanged.connect(
+            lambda state: self.skip_emojis_changed.emit(
+                state == Qt.CheckState.Checked.value
+            )
+        )
+        msg_layout.addRow(self.skip_emojis_check)
 
         msg_group.setLayout(msg_layout)
         layout.addWidget(msg_group)
@@ -200,7 +216,9 @@ class TTSPanel(QWidget):
                 combo.addItem(v["name"], v["id"])
             combo.blockSignals(False)
 
-    def load_default_voices(self, ko_voice_id: str, ja_voice_id: str, en_voice_id: str) -> None:
+    def load_default_voices(
+        self, ko_voice_id: str, ja_voice_id: str, en_voice_id: str
+    ) -> None:
         for combo, voice_id in [
             (self.ko_voice_combo, ko_voice_id),
             (self.ja_voice_combo, ja_voice_id),
@@ -230,7 +248,8 @@ class TTSPanel(QWidget):
         volume_db: float,
         max_length: int,
         skip_commands: bool,
-        google_cred_path: str,
+        skip_emojis: bool = False,
+        google_cred_path: str = "",
         default_voice_ko: str = "",
         default_voice_ja: str = "",
         default_voice_en: str = "",
@@ -248,9 +267,12 @@ class TTSPanel(QWidget):
         self.volume_slider.setValue(int(volume_db))
         self.max_length_spin.setValue(max_length)
         self.skip_commands_check.setChecked(skip_commands)
+        self.skip_emojis_check.setChecked(skip_emojis)
         self.cred_path_edit.setText(google_cred_path)
         if default_voice_ko:
-            self.load_default_voices(default_voice_ko, default_voice_ja, default_voice_en)
+            self.load_default_voices(
+                default_voice_ko, default_voice_ja, default_voice_en
+            )
 
     def current_provider_data(self) -> str:
         return self.provider_combo.currentData() or "edge"

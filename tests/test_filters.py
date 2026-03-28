@@ -199,6 +199,39 @@ class TestMessageFilterShouldSkip:
         filter_obj = MessageFilter(skip_commands=False)
         assert filter_obj.should_skip("user", "!help") is False
 
+    def test_only_emojis_skipped(self):
+        """Test that messages with only emojis are skipped when enabled."""
+        filter_obj = MessageFilter(skip_emojis=True)
+        assert filter_obj.should_skip("user", "{:arpaSad:}") is True
+        assert filter_obj.should_skip("user", "{:arpaSad:}{:arpaSad:}") is True
+        assert filter_obj.should_skip("user", "{:happyFace:}") is True
+        assert filter_obj.should_skip("user", "{:emoji123:}") is True
+
+    def test_only_emojis_not_skipped_with_text(self):
+        """Test that messages with text and emojis are not skipped."""
+        filter_obj = MessageFilter(skip_emojis=True)
+        assert filter_obj.should_skip("user", "Hello {:arpaSad:}") is False
+        assert filter_obj.should_skip("user", "{:emoji:} world") is False
+        assert filter_obj.should_skip("user", "hi{:emoji:}there") is False
+
+    def test_only_emojis_not_skipped_when_disabled(self):
+        """Test that emojis are not skipped when filter is disabled."""
+        filter_obj = MessageFilter(skip_emojis=False)
+        assert filter_obj.should_skip("user", "{:arpaSad:}") is False
+        assert (
+            filter_obj.should_skip("user", "{:arpaSad:}{:arpaSad:}{:arpaSad:}") is False
+        )
+
+    def test_contains_only_emojis_helper(self):
+        """Test the _contains_only_emojis helper method."""
+        assert MessageFilter._contains_only_emojis("{:arpaSad:}") is True
+        assert MessageFilter._contains_only_emojis("{:emoji:}{:emoji2:}") is True
+        assert MessageFilter._contains_only_emojis("  {:emoji:}  ") is True
+        assert MessageFilter._contains_only_emojis("text{:emoji:}") is False
+        assert MessageFilter._contains_only_emojis("{:emoji:}text") is False
+        assert MessageFilter._contains_only_emojis("just text") is False
+        assert MessageFilter._contains_only_emojis("") is True
+
     def test_max_length(self):
         """Test that messages exceeding max length are skipped."""
         filter_obj = MessageFilter(max_length=10)
@@ -230,6 +263,7 @@ class TestMessageFilterInitialization:
         assert filter_obj.banned_users == []
         assert filter_obj.max_length == 50
         assert filter_obj.skip_commands is True
+        assert filter_obj.skip_emojis is False
 
     def test_custom_initialization(self):
         """Test custom initialization parameters."""
@@ -238,11 +272,13 @@ class TestMessageFilterInitialization:
             banned_users=["user1"],
             max_length=100,
             skip_commands=False,
+            skip_emojis=True,
         )
         assert filter_obj.banned_words == ["word1"]
         assert filter_obj.banned_users == ["user1"]
         assert filter_obj.max_length == 100
         assert filter_obj.skip_commands is False
+        assert filter_obj.skip_emojis is True
 
     def test_none_initialization(self):
         """Test that None values are converted to empty lists."""

@@ -21,7 +21,9 @@ log = logging.getLogger(__name__)
 
 
 def create_app() -> MainWindow:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
+    )
 
     config = AppConfig.load()
     db = Database(config.db_path)
@@ -34,6 +36,7 @@ def create_app() -> MainWindow:
         banned_users=[u[0] for u in db.get_banned_users()],
         max_length=config.max_message_length,
         skip_commands=config.skip_commands,
+        skip_emojis=config.skip_emojis,
     )
     tts_engine = TTSEngine(db=db, audio_player=audio_player)
 
@@ -85,7 +88,9 @@ def create_app() -> MainWindow:
         tts_engine.stop()
         await chat_manager.disconnect_chat()
 
-    conn.chat_disconnect_requested.connect(lambda: asyncio.ensure_future(_do_chat_disconnect()))
+    conn.chat_disconnect_requested.connect(
+        lambda: asyncio.ensure_future(_do_chat_disconnect())
+    )
 
     async def _do_cancel_login():
         await chat_manager.cancel_login()
@@ -141,6 +146,7 @@ def create_app() -> MainWindow:
         volume_db=config.volume_db,
         max_length=config.max_message_length,
         skip_commands=config.skip_commands,
+        skip_emojis=config.skip_emojis,
         google_cred_path=config.google_credentials_path,
         default_voice_ko=config.default_voice_ko,
         default_voice_ja=config.default_voice_ja,
@@ -157,11 +163,13 @@ def create_app() -> MainWindow:
 
     tts_panel.provider_changed.connect(on_provider_changed)
 
-    tts_panel.tts_enabled_changed.connect(lambda enabled: (
-        tts_engine.set_enabled(enabled),
-        setattr(config, "tts_enabled", enabled),
-        config.save(),
-    ))
+    tts_panel.tts_enabled_changed.connect(
+        lambda enabled: (
+            tts_engine.set_enabled(enabled),
+            setattr(config, "tts_enabled", enabled),
+            config.save(),
+        )
+    )
 
     def on_playback_mode_changed(mode: str):
         audio_player.set_mode(
@@ -193,6 +201,13 @@ def create_app() -> MainWindow:
 
     tts_panel.skip_commands_changed.connect(on_skip_commands_changed)
 
+    def on_skip_emojis_changed(skip: bool):
+        message_filter.skip_emojis = skip
+        config.skip_emojis = skip
+        config.save()
+
+    tts_panel.skip_emojis_changed.connect(on_skip_emojis_changed)
+
     def on_google_cred_changed(path: str):
         google_provider.set_credentials(path)
         config.google_credentials_path = path
@@ -212,10 +227,12 @@ def create_app() -> MainWindow:
 
     tts_panel.default_voice_changed.connect(on_default_voice_changed)
 
-    tts_panel.clear_queue_requested.connect(lambda: (
-        tts_engine.clear_queue(),
-        audio_player.clear(),
-    ))
+    tts_panel.clear_queue_requested.connect(
+        lambda: (
+            tts_engine.clear_queue(),
+            audio_player.clear(),
+        )
+    )
 
     tts_engine.queue_size_changed.connect(tts_panel.set_queue_size)
 
@@ -231,14 +248,18 @@ def create_app() -> MainWindow:
                 provider.get_available_voices("en-US"),
             )
             tts_panel.load_default_voices(
-                config.default_voice_ko, config.default_voice_ja, config.default_voice_en
+                config.default_voice_ko,
+                config.default_voice_ja,
+                config.default_voice_en,
             )
 
     def _refresh_user_panel_voices():
         provider = tts_engine.active_provider
         if provider:
             language = user_panel.current_language()
-            user_panel.set_voices(provider.get_available_voices(language), provider.name)
+            user_panel.set_voices(
+                provider.get_available_voices(language), provider.name
+            )
 
     def _refresh_user_list():
         provider = tts_engine.active_provider
@@ -262,7 +283,9 @@ def create_app() -> MainWindow:
                 user_panel.load_settings(settings)
 
     user_panel.user_combo.currentIndexChanged.connect(lambda _: on_user_selected())
-    user_panel.language_changed.connect(lambda _: (_refresh_user_panel_voices(), on_user_selected()))
+    user_panel.language_changed.connect(
+        lambda _: (_refresh_user_panel_voices(), on_user_selected())
+    )
 
     def on_user_settings_updated(user_id: str, settings: VoiceSettings):
         language = user_panel.current_language()
@@ -312,7 +335,9 @@ def create_app() -> MainWindow:
     tts_engine.set_default_voice("en-US", config.default_voice_en)
     audio_player.set_volume(config.volume_db)
     audio_player.set_mode(
-        PlaybackMode.INTERRUPT if config.playback_mode == "interrupt" else PlaybackMode.SEQUENTIAL
+        PlaybackMode.INTERRUPT
+        if config.playback_mode == "interrupt"
+        else PlaybackMode.SEQUENTIAL
     )
 
     # Graceful shutdown
@@ -322,6 +347,7 @@ def create_app() -> MainWindow:
         db.close()
 
     from PySide6.QtWidgets import QApplication
+
     app = QApplication.instance()
     if app:
         app.aboutToQuit.connect(on_close)
@@ -329,6 +355,7 @@ def create_app() -> MainWindow:
     # 첫 실행 안내: Client ID가 설정되지 않은 경우 도움말 다이얼로그 자동 표시
     if not config.client_id:
         from PySide6.QtCore import QTimer
+
         QTimer.singleShot(300, conn._on_help)
 
     return window

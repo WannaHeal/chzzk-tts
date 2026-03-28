@@ -10,11 +10,13 @@ class MessageFilter:
         banned_users: list[str] | None = None,
         max_length: int = 50,
         skip_commands: bool = True,
+        skip_emojis: bool = False,
     ):
         self.banned_words: list[str] = banned_words or []
         self.banned_users: list[str] = banned_users or []
         self.max_length = max_length
         self.skip_commands = skip_commands
+        self.skip_emojis = skip_emojis
 
     def should_skip(self, user_id: str, content: str) -> bool:
         if not content:
@@ -26,6 +28,9 @@ class MessageFilter:
         if self.skip_commands and content.startswith("!"):
             return True
 
+        if self.skip_emojis and self._contains_only_emojis(content):
+            return True
+
         if len(content) > self.max_length:
             return True
 
@@ -34,6 +39,16 @@ class MessageFilter:
                 return True
 
         return False
+
+    @staticmethod
+    def _contains_only_emojis(content: str) -> bool:
+        """Check if content contains only CHZZK emojis (e.g., {:arpaSad:})."""
+        # Pattern matches {:emoji_name:} format
+        emoji_pattern = r"\{:[a-zA-Z0-9_]+:\}"
+        # Remove all emoji patterns from content
+        cleaned = re.sub(emoji_pattern, "", content)
+        # Check if only whitespace remains
+        return not cleaned.strip()
 
     @staticmethod
     def preprocess(content: str) -> str:

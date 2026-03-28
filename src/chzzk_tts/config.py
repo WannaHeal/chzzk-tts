@@ -21,6 +21,9 @@ class AppConfig:
     volume_db: float = 0.0  # -30.0 to +30.0
     max_message_length: int = 50
     skip_commands: bool = True  # skip messages starting with '!'
+    skip_emojis: bool = (
+        False  # skip messages containing only emojis like {:emoji_name:}
+    )
 
     # Default voices per language (Edge TTS)
     default_voice_ko: str = "ko-KR-SunHiNeural"
