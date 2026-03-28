@@ -50,6 +50,17 @@ class Database:
                     DROP TABLE user_voice_settings_old;
                 """)
 
+            # Migration: recreate oauth_tokens table if using old schema
+            oauth_cols = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(oauth_tokens)"
+                ).fetchall()
+            }
+            if oauth_cols and "token_data" not in oauth_cols:
+                # Old schema - drop and recreate
+                self._conn.execute("DROP TABLE oauth_tokens")
+
             self._conn.executescript("""
                 CREATE TABLE IF NOT EXISTS user_voice_settings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,6 +90,14 @@ class Database:
                     word TEXT NOT NULL UNIQUE,
                     created_at TEXT DEFAULT (datetime('now'))
                 );
+
+                CREATE TABLE IF NOT EXISTS oauth_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    client_id TEXT NOT NULL UNIQUE,
+                    token_data TEXT NOT NULL,  -- JSON serialized AccessToken
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now'))
+                );
             """)
 
     # --- User voice settings ---
@@ -102,7 +121,11 @@ class Database:
         )
 
     def save_user_settings(
-        self, user_id: str, nickname: str | None, settings: VoiceSettings, language: str = "ko-KR"
+        self,
+        user_id: str,
+        nickname: str | None,
+        settings: VoiceSettings,
+        language: str = "ko-KR",
     ) -> None:
         with self._lock, self._conn:
             self._conn.execute(
@@ -162,9 +185,7 @@ class Database:
 
     def remove_banned_user(self, user_id: str) -> None:
         with self._lock, self._conn:
-            self._conn.execute(
-                "DELETE FROM banned_users WHERE user_id = ?", (user_id,)
-            )
+            self._conn.execute("DELETE FROM banned_users WHERE user_id = ?", (user_id,))
 
     # --- Banned words ---
 
@@ -183,8 +204,50 @@ class Database:
 
     def remove_banned_word(self, word: str) -> None:
         with self._lock, self._conn:
+            self._conn.execute("DELETE FROM banned_words WHERE word = ?", (word,))
+
+    # --- OAuth tokens ---
+
+    def save_oauth_token(self, client_id: str, token_data: dict) -> None:
+        """Save or update OAuth access token for the given client_id.
+
+        Args:
+            client_id: The OAuth client ID
+            token_data: Dictionary containing AccessToken data (access_token, refresh_token, etc.)
+        """
+        with self._lock, self._conn:
             self._conn.execute(
-                "DELETE FROM banned_words WHERE word = ?", (word,)
+                """
+                INSERT INTO oauth_tokens (client_id, token_data)
+                VALUES (?, ?)
+                ON CONFLICT(client_id) DO UPDATE SET
+                    token_data = excluded.token_data,
+                    updated_at = datetime('now')
+                """,
+                (client_id, json.dumps(token_data, ensure_ascii=False)),
+            )
+
+    def get_oauth_token(self, client_id: str) -> dict | None:
+        """Get stored OAuth token data for the given client_id.
+
+        Returns:
+            Dictionary with token data or None if not found
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT token_data FROM oauth_tokens WHERE client_id = ?",
+                (client_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return json.loads(row["token_data"])
+
+    def clear_oauth_token(self, client_id: str) -> None:
+        """Clear stored OAuth token for the given client_id."""
+        with self._lock, self._conn:
+            self._conn.execute(
+                "DELETE FROM oauth_tokens WHERE client_id = ?",
+                (client_id,),
             )
 
     def close(self) -> None:
