@@ -43,7 +43,9 @@ class MessageFilter:
             "링크",
             content,
         )
-        # Compress repeated characters
+
+        # Keep existing specific character compressions for 3+ repetitions
+        # These must be done BEFORE Jaum/Moum conversion
         content = re.sub(r"ㅋ{3,}", "ㅋㅋㅋ", content)
         content = re.sub(r"ㅎ{3,}", "ㅎㅎㅎ", content)
         content = re.sub(r"z{3,}", "zzz", content)
@@ -52,4 +54,65 @@ class MessageFilter:
         content = re.sub(r"\?{3,}", "??", content)
         content = re.sub(r"!{3,}", "!!", content)
         content = re.sub(r"\.{4,}", "...", content)
+
+        # Compact any character repeated 6+ times to 5 repetitions
+        # This must be done BEFORE Jaum/Moum conversion
+        def compact_repeated(match: re.Match) -> str:
+            char = match.group(1)
+            return char * 5
+
+        content = re.sub(r"(.)\1{5,}", compact_repeated, content)
+
+        # Convert Korean Jaum (consonants) to full letter names
+        jaum_map = {
+            "ㄱ": "기역",
+            "ㄲ": "쌍기역",
+            "ㄴ": "니은",
+            "ㄷ": "디귿",
+            "ㄸ": "쌍디귿",
+            "ㄹ": "리을",
+            "ㅁ": "미음",
+            "ㅂ": "비읍",
+            "ㅃ": "쌍비읍",
+            "ㅅ": "시옷",
+            "ㅆ": "쌍시옷",
+            "ㅇ": "이응",
+            "ㅈ": "지읒",
+            "ㅉ": "쌍지읒",
+            "ㅊ": "치읓",
+            "ㅋ": "키읔",
+            "ㅌ": "티읕",
+            "ㅍ": "피읖",
+            "ㅎ": "히읗",
+        }
+        for jaum, full_name in jaum_map.items():
+            content = content.replace(jaum, full_name)
+
+        # Convert Korean Moum (vowels) to full letters with ㅇ
+        moum_map = {
+            "ㅏ": "아",
+            "ㅐ": "애",
+            "ㅑ": "야",
+            "ㅒ": "얘",
+            "ㅓ": "어",
+            "ㅔ": "에",
+            "ㅕ": "여",
+            "ㅖ": "예",
+            "ㅗ": "오",
+            "ㅘ": "와",
+            "ㅙ": "왜",
+            "ㅚ": "외",
+            "ㅛ": "요",
+            "ㅜ": "우",
+            "ㅝ": "워",
+            "ㅞ": "웨",
+            "ㅟ": "위",
+            "ㅠ": "유",
+            "ㅡ": "으",
+            "ㅢ": "의",
+            "ㅣ": "이",
+        }
+        for moum, full_name in moum_map.items():
+            content = content.replace(moum, full_name)
+
         return content.strip()
