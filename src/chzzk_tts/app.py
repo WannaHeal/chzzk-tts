@@ -30,7 +30,7 @@ def create_app() -> MainWindow:
 
     # Core components
     audio_player = AudioPlayer()
-    chat_manager = ChzzkChatManager()
+    chat_manager = ChzzkChatManager(db=db)
     message_filter = MessageFilter(
         banned_words=db.get_banned_words(),
         banned_users=[u[0] for u in db.get_banned_users()],
@@ -71,10 +71,15 @@ def create_app() -> MainWindow:
 
     # @asyncSlot() + Signal() (인수 없음) 조합은 qasync 버그로 동작하지 않음.
     # 인수 없는 async 슬롯은 일반 함수 + asyncio.ensure_future()로 우회.
-    async def _do_logout():
-        await chat_manager.logout()
+    async def _do_logout(clear_token: bool = False):
+        await chat_manager.logout(clear_token=clear_token)
 
-    conn.logout_requested.connect(lambda: asyncio.ensure_future(_do_logout()))
+    conn.logout_requested.connect(
+        lambda: asyncio.ensure_future(_do_logout(clear_token=False))
+    )
+    conn.logout_and_clear_requested.connect(
+        lambda: asyncio.ensure_future(_do_logout(clear_token=True))
+    )
 
     @asyncSlot(str)
     async def on_chat_connect_requested(channel_id: str):
@@ -351,6 +356,20 @@ def create_app() -> MainWindow:
     app = QApplication.instance()
     if app:
         app.aboutToQuit.connect(on_close)
+
+    # Auto-login with stored token if credentials are available
+    if config.client_id and config.client_secret:
+
+        async def try_auto_login():
+            success = await chat_manager.auto_login_with_token(
+                config.client_id, config.client_secret
+            )
+            if success:
+                log.info("Auto-login successful on startup")
+            else:
+                log.info("Auto-login failed, manual login required")
+
+        asyncio.ensure_future(try_auto_login())
 
     # 첫 실행 안내: Client ID가 설정되지 않은 경우 도움말 다이얼로그 자동 표시
     if not config.client_id:

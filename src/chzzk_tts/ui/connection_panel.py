@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -27,9 +27,10 @@ OAuth 인증 후 자동으로 연결됩니다.
 
 
 class ConnectionPanel(QWidget):
-    login_requested = Signal(str, str)       # client_id, client_secret
-    logout_requested = Signal()
-    chat_connect_requested = Signal(str)     # channel_id
+    login_requested = Signal(str, str)  # client_id, client_secret
+    logout_requested = Signal()  # logout but keep token
+    logout_and_clear_requested = Signal()  # logout and clear token
+    chat_connect_requested = Signal(str)  # channel_id
     chat_disconnect_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None):
@@ -103,6 +104,8 @@ class ConnectionPanel(QWidget):
 
         # ── 시그널 연결 ──────────────────────────────────────────────────
         self.login_btn.clicked.connect(self._on_login_toggle)
+        self.login_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.login_btn.customContextMenuRequested.connect(self.show_logout_context_menu)
         self.chat_connect_btn.clicked.connect(self._on_chat_toggle)
         self.help_btn.clicked.connect(self._on_help)
 
@@ -117,6 +120,20 @@ class ConnectionPanel(QWidget):
                 self.client_secret_edit.text().strip(),
             )
 
+    def show_logout_context_menu(self, pos) -> None:
+        """Show context menu for logout button to allow clearing token."""
+        from PySide6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        logout_action = menu.addAction("로그아웃")
+        logout_and_clear_action = menu.addAction("로그아웃 및 토큰 삭제")
+
+        action = menu.exec(self.login_btn.mapToGlobal(pos))
+        if action == logout_action:
+            self.logout_requested.emit()
+        elif action == logout_and_clear_action:
+            self.logout_and_clear_requested.emit()
+
     def _on_chat_toggle(self) -> None:
         if self._chat_connected:
             self.chat_disconnect_requested.emit()
@@ -125,6 +142,7 @@ class ConnectionPanel(QWidget):
 
     def _on_help(self) -> None:
         from PySide6.QtCore import Qt
+
         msg = QMessageBox(self)
         msg.setWindowTitle("앱 설정 안내")
         msg.setTextFormat(Qt.TextFormat.RichText)

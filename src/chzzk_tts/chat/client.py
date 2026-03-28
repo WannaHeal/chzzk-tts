@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QObject, Signal
 
 from chzzkpy import Client, UserPermission
+from chzzkpy.authorization import AccessToken
 
 if TYPE_CHECKING:
     from chzzkpy import Message
@@ -93,21 +94,27 @@ class _OAuthCallbackServer:
 
 
 class ChzzkChatManager(QObject):
-    message_received = Signal(str, str, str)   # user_id, nickname, content
-    login_status_changed = Signal(str)          # 로그인 단계 상태
-    chat_status_changed = Signal(str)           # 채팅 연결 단계 상태
+    message_received = Signal(str, str, str)  # user_id, nickname, content
+    login_status_changed = Signal(str)  # 로그인 단계 상태
+    chat_status_changed = Signal(str)  # 채팅 연결 단계 상태
+    token_saved = Signal(str)  # 토큰이 저장된 client_id
 
-    def __init__(self, parent: QObject | None = None):
+    def __init__(self, db=None, parent: QObject | None = None):
         super().__init__(parent)
+        self._db = db
         self._client: Client | None = None
         self._user_client = None
         self._login_task: asyncio.Task | None = None
         self._chat_task: asyncio.Task | None = None
+        self._current_client_id: str | None = None
+        self._current_client_secret: str | None = None
 
     # ── 로그인 ────────────────────────────────────────────────────────────
 
     async def login(self, client_id: str, client_secret: str) -> None:
         await self._cancel_login_task()
+        self._current_client_id = client_id
+        self._current_client_secret = client_secret
         self.login_status_changed.emit("로그인 중...")
         self._login_task = asyncio.ensure_future(
             self._do_login(client_id, client_secret)
@@ -115,6 +122,32 @@ class ChzzkChatManager(QObject):
 
     async def _do_login(self, client_id: str, client_secret: str) -> None:
         try:
+            # First, try to use existing token
+            if self._db:
+                token_data = self._db.get_oauth_token(client_id)
+                if token_data:
+                    log.info("Found existing token, attempting auto-login...")
+                    self.login_status_changed.emit("저장된 토큰으로 로그인 중...")
+                    try:
+                        self._client = Client(
+                            client_id=client_id, client_secret=client_secret
+                        )
+                        await self._client._async_setup_hook()
+                        # Reconstruct AccessToken from stored data
+                        access_token = AccessToken(**token_data)
+                        self._user_client = await self._client.get_user_client(
+                            access_token
+                        )
+                        self.login_status_changed.emit("로그인됨")
+                        log.info("Auto-login successful with stored token")
+                        return
+                    except Exception as e:
+                        log.warning("Auto-login failed with stored token: %s", e)
+                        self.login_status_changed.emit(
+                            "저장된 토큰 만료, 재인증 필요..."
+                        )
+
+            # If no token or token failed, proceed with OAuth flow
             self._client = Client(client_id=client_id, client_secret=client_secret)
             await self._client._async_setup_hook()
 
@@ -135,6 +168,15 @@ class ChzzkChatManager(QObject):
                 result["code"], state=state
             )
             self._user_client = await self._client.get_user_client(access_token)
+
+            # Save token to database
+            if self._db:
+                # Serialize AccessToken to dict for storage (use by_alias=True to preserve camelCase field names)
+                token_data = access_token.model_dump(by_alias=True)
+                self._db.save_oauth_token(client_id, token_data)
+                self.token_saved.emit(client_id)
+                log.info("OAuth token saved to database")
+
             self.login_status_changed.emit("로그인됨")
         except asyncio.CancelledError:
             self.login_status_changed.emit("로그인 취소됨")
@@ -142,12 +184,41 @@ class ChzzkChatManager(QObject):
             log.exception("CHZZK login error")
             self.login_status_changed.emit(f"로그인 실패: {e}")
 
+    async def auto_login_with_token(self, client_id: str, client_secret: str) -> bool:
+        """Try to login using stored token without showing OAuth dialog.
+
+        Returns True if successful, False otherwise.
+        """
+        if not self._db:
+            return False
+
+        token_data = self._db.get_oauth_token(client_id)
+        if not token_data:
+            return False
+
+        try:
+            self.login_status_changed.emit("자동 로그인 중...")
+            self._client = Client(client_id=client_id, client_secret=client_secret)
+            await self._client._async_setup_hook()
+            # Reconstruct AccessToken from stored data
+            access_token = AccessToken(**token_data)
+            self._user_client = await self._client.get_user_client(access_token)
+            self._current_client_id = client_id
+            self._current_client_secret = client_secret
+            self.login_status_changed.emit("로그인됨")
+            log.info("Auto-login successful")
+            return True
+        except Exception as e:
+            log.warning("Auto-login failed: %s", e)
+            self.login_status_changed.emit("자동 로그인 실패")
+            return False
+
     async def cancel_login(self) -> None:
         if self._login_task and not self._login_task.done():
             await self._cancel_login_task()
             self.login_status_changed.emit("로그인 취소됨")
 
-    async def logout(self) -> None:
+    async def logout(self, clear_token: bool = False) -> None:
         await self._cancel_login_task()
         await self._cancel_chat_task()
         # 채팅 연결이 있었으면 상태 초기화
@@ -159,6 +230,10 @@ class ChzzkChatManager(QObject):
         except Exception:
             log.exception("CHZZK logout error")
         finally:
+            # Clear token if requested
+            if clear_token and self._db and self._current_client_id:
+                self._db.clear_oauth_token(self._current_client_id)
+                log.info("OAuth token cleared from database")
             self._client = None
             self._user_client = None
         self.login_status_changed.emit("로그아웃됨")
@@ -180,9 +255,7 @@ class ChzzkChatManager(QObject):
             return
         await self._cancel_chat_task()
         self.chat_status_changed.emit("채팅 연결 중...")
-        self._chat_task = asyncio.ensure_future(
-            self._do_connect_chat(channel_id)
-        )
+        self._chat_task = asyncio.ensure_future(self._do_connect_chat(channel_id))
 
     async def _do_connect_chat(self, channel_id: str) -> None:  # noqa: ARG002
         try:
