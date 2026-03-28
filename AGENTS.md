@@ -21,7 +21,7 @@ Chzzk-TTS is a desktop application that reads Chzzk (Naver's streaming platform)
 - **TTS Providers**: 
   - edge-tts (Microsoft Edge TTS)
   - google-cloud-texttospeech
-- **Audio**: sounddevice + numpy + pydub
+- **Audio**: sounddevice + numpy + soundfile
 - **Package Manager**: uv
 - **Build**: setuptools
 

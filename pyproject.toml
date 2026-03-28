@@ -12,7 +12,7 @@ dependencies = [
     "google-cloud-texttospeech>=2.16",
     "sounddevice>=0.4",
     "numpy>=1.26",
-    "pydub>=0.25",
+    "soundfile>=0.12",
 ]
 
 [tool.setuptools.packages.find]
