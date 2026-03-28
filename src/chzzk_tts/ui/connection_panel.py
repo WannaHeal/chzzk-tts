@@ -147,7 +147,7 @@ class ConnectionPanel(QWidget):
         msg.setWindowTitle("앱 설정 안내")
         msg.setTextFormat(Qt.TextFormat.RichText)
         msg.setText(_HELP_TEXT)
-        msg.exec()
+        msg.open()
 
     # ── 상태 변경 메서드 ─────────────────────────────────────────────────
 
