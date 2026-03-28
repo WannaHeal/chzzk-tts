@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget,
@@ -134,11 +136,32 @@ class ConnectionPanel(QWidget):
         elif action == logout_and_clear_action:
             self.logout_and_clear_requested.emit()
 
+    def _validate_channel_id(self, channel_id: str) -> tuple[bool, str]:
+        """Validate channel ID format. Returns (is_valid, error_message)."""
+        if not channel_id:
+            return False, "채널 ID를 입력해주세요."
+
+        # Check if it's a 32-character hexadecimal string
+        if len(channel_id) != 32:
+            return False, f"채널 ID는 32자여야 합니다. (현재: {len(channel_id)}자)"
+
+        if not re.match(r"^[0-9a-fA-F]{32}$", channel_id):
+            return False, "채널 ID는 16진수 문자(0-9, a-f)로만 구성되어야 합니다."
+
+        return True, ""
+
     def _on_chat_toggle(self) -> None:
         if self._chat_connected:
             self.chat_disconnect_requested.emit()
         else:
-            self.chat_connect_requested.emit(self.channel_id_edit.text().strip())
+            channel_id = self.channel_id_edit.text().strip()
+            is_valid, error_msg = self._validate_channel_id(channel_id)
+
+            if not is_valid:
+                QMessageBox.warning(self, "입력 오류", error_msg)
+                return
+
+            self.chat_connect_requested.emit(channel_id)
 
     def _on_help(self) -> None:
         from PySide6.QtCore import Qt
