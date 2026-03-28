@@ -135,6 +135,8 @@ def create_app() -> MainWindow:
     # --- Wire Chat → TTS ---
     def on_message_received(user_id: str, nickname: str, content: str):
         conn.append_chat(nickname, content)
+        # Add to active users list for voice customization
+        user_panel.add_active_user(user_id, nickname)
         content = MessageFilter.preprocess(content)
         if not message_filter.should_skip(user_id, content):
             tts_engine.enqueue(user_id, nickname, content)
@@ -259,44 +261,85 @@ def create_app() -> MainWindow:
             )
 
     def _refresh_user_panel_voices():
+        """Refresh voice options for all languages in user panel."""
         provider = tts_engine.active_provider
         if provider:
-            language = user_panel.current_language()
             user_panel.set_voices(
-                provider.get_available_voices(language), provider.name
+                provider.get_available_voices("ko-KR"),
+                provider.get_available_voices("ja-JP"),
+                provider.get_available_voices("en-US"),
+                provider.name,
             )
 
-    def _refresh_user_list():
+    def _refresh_stored_user_list():
+        """Refresh the stored users list from database."""
         provider = tts_engine.active_provider
         if provider:
             users = db.get_all_users(provider.name)
-            user_panel.set_users(users)
+            user_panel.set_stored_users(users)
 
-    _refresh_default_voices()
-    _refresh_user_panel_voices()
-    _refresh_user_list()
-
-    user_panel.refresh_btn.clicked.connect(_refresh_user_list)
-
-    def on_user_selected():
-        user_id = user_panel.user_combo.currentData()
+    def on_stored_user_selected():
+        """Load settings for all languages when a stored user is selected."""
+        user_id = user_panel.get_current_user_id()
         provider = tts_engine.active_provider
         if user_id and provider:
-            language = user_panel.current_language()
-            settings = db.get_user_settings(user_id, provider.name, language)
-            if settings:
-                user_panel.load_settings(settings)
+            # Load settings for each language
+            for lang_code in ["ko-KR", "ja-JP", "en-US"]:
+                settings = db.get_user_settings(user_id, provider.name, lang_code)
+                if settings:
+                    user_panel.load_language_settings(lang_code, settings)
 
-    user_panel.user_combo.currentIndexChanged.connect(lambda _: on_user_selected())
-    user_panel.language_changed.connect(
-        lambda _: (_refresh_user_panel_voices(), on_user_selected())
+    def on_user_settings_updated(user_id: str, language: str, settings: VoiceSettings):
+        """Save user settings for a specific language to database."""
+        # Get nickname from stored users if available
+        nickname = None
+        provider = tts_engine.active_provider
+        if provider:
+            users = db.get_all_users(provider.name)
+            for uid, nick in users:
+                if uid == user_id:
+                    nickname = nick
+                    break
+        db.save_user_settings(user_id, nickname, settings, language)
+
+    # Initialize user panel
+    _refresh_default_voices()
+    _refresh_user_panel_voices()
+    _refresh_stored_user_list()
+
+    # Connect stored list selection change to load settings
+    user_panel.stored_list.currentItemChanged.connect(
+        lambda current, previous: on_stored_user_selected()
     )
 
-    def on_user_settings_updated(user_id: str, settings: VoiceSettings):
-        language = user_panel.current_language()
-        db.save_user_settings(user_id, None, settings, language)
-
     user_panel.settings_updated.connect(on_user_settings_updated)
+
+    def on_user_added_to_stored(user_id: str, nickname: str):
+        """Add a user from active list to stored list."""
+        provider = tts_engine.active_provider
+        if provider:
+            # Save with default settings to create the user entry
+            default_settings = VoiceSettings(
+                provider_name=provider.name,
+                voice_id="",
+                speed=1.0,
+                pitch=0.0,
+            )
+            db.save_user_settings(user_id, nickname, default_settings, "ko-KR")
+            _refresh_stored_user_list()
+            # Select the newly added user
+            user_panel.select_stored_user(user_id)
+
+    user_panel.user_added.connect(on_user_added_to_stored)
+
+    def on_user_removed_from_stored(user_id: str):
+        """Remove a user from the stored list."""
+        provider = tts_engine.active_provider
+        if provider:
+            db.remove_user_settings(user_id, provider.name)
+            _refresh_stored_user_list()
+
+    user_panel.user_removed.connect(on_user_removed_from_stored)
 
     # --- Wire Filter Panel ---
     filter_panel = window.filter_panel

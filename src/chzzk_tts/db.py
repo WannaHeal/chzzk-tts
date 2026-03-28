@@ -165,6 +165,25 @@ class Database:
                 ).fetchall()
         return [(r["user_id"], r["nickname"] or r["user_id"]) for r in rows]
 
+    def remove_user_settings(self, user_id: str, provider: str | None = None) -> None:
+        """Remove a user's voice settings from the database.
+
+        Args:
+            user_id: The user ID to remove
+            provider: Optional provider name filter. If None, removes for all providers.
+        """
+        with self._lock, self._conn:
+            if provider:
+                self._conn.execute(
+                    "DELETE FROM user_voice_settings WHERE user_id = ? AND provider = ?",
+                    (user_id, provider),
+                )
+            else:
+                self._conn.execute(
+                    "DELETE FROM user_voice_settings WHERE user_id = ?",
+                    (user_id,),
+                )
+
     # --- Banned users ---
 
     def get_banned_users(self) -> list[tuple[str, str]]:
