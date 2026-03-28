@@ -5,7 +5,7 @@ from typing import Any
 
 import edge_tts
 import numpy as np
-from pydub import AudioSegment
+import soundfile as sf
 
 from chzzk_tts.tts.base import TTSProvider, VoiceSettings, detect_language
 
@@ -20,25 +20,30 @@ _VOICES_BY_LANG: dict[str, list[dict[str, str]]] = {
     "ko-KR": [
         {"id": "ko-KR-SunHiNeural", "name": "SunHi (여성)"},
         {"id": "ko-KR-InJoonNeural", "name": "InJoon (남성)"},
-        {"id": "ko-KR-BongJinNeural", "name": "BongJin (남성)"},
-        {"id": "ko-KR-GookMinNeural", "name": "GookMin (남성)"},
-        {"id": "ko-KR-HyunsuNeural", "name": "Hyunsu (남성)"},
-        {"id": "ko-KR-JiMinNeural", "name": "JiMin (여성)"},
-        {"id": "ko-KR-SeoHyeonNeural", "name": "SeoHyeon (여성)"},
-        {"id": "ko-KR-SoonBokNeural", "name": "SoonBok (여성)"},
-        {"id": "ko-KR-YuJinNeural", "name": "YuJin (여성)"},
+        {"id": "ko-KR-HyunsuMultilingualNeural", "name": "Hyunsu Multilingual (남성)"},
     ],
     "ja-JP": [
         {"id": "ja-JP-NanamiNeural", "name": "Nanami (女性)"},
         {"id": "ja-JP-KeitaNeural", "name": "Keita (男性)"},
-        {"id": "ja-JP-AoiNeural", "name": "Aoi (女性)"},
-        {"id": "ja-JP-DaichiNeural", "name": "Daichi (男性)"},
     ],
     "en-US": [
-        {"id": "en-US-AriaNeural", "name": "Aria (Female)"},
-        {"id": "en-US-GuyNeural", "name": "Guy (Male)"},
-        {"id": "en-US-JennyNeural", "name": "Jenny (Female)"},
-        {"id": "en-US-ChristopherNeural", "name": "Christopher (Male)"},
+        {"id": "en-US-AnaNeural", "name": "Ana (Female) - Cartoon"},
+        {"id": "en-US-AndrewMultilingualNeural", "name": "Andrew Multilingual (Male)"},
+        {"id": "en-US-AndrewNeural", "name": "Andrew (Male)"},
+        {"id": "en-US-AriaNeural", "name": "Aria (Female) - News"},
+        {"id": "en-US-AvaMultilingualNeural", "name": "Ava Multilingual (Female)"},
+        {"id": "en-US-AvaNeural", "name": "Ava (Female)"},
+        {"id": "en-US-BrianMultilingualNeural", "name": "Brian Multilingual (Male)"},
+        {"id": "en-US-BrianNeural", "name": "Brian (Male)"},
+        {"id": "en-US-ChristopherNeural", "name": "Christopher (Male) - News"},
+        {"id": "en-US-EmmaMultilingualNeural", "name": "Emma Multilingual (Female)"},
+        {"id": "en-US-EmmaNeural", "name": "Emma (Female)"},
+        {"id": "en-US-EricNeural", "name": "Eric (Male) - News"},
+        {"id": "en-US-GuyNeural", "name": "Guy (Male) - News"},
+        {"id": "en-US-JennyNeural", "name": "Jenny (Female) - General"},
+        {"id": "en-US-MichelleNeural", "name": "Michelle (Female) - News"},
+        {"id": "en-US-RogerNeural", "name": "Roger (Male) - News"},
+        {"id": "en-US-SteffanNeural", "name": "Steffan (Male) - News"},
     ],
 }
 
@@ -68,10 +73,12 @@ class EdgeTTSProvider(TTSProvider):
             if chunk["type"] == "audio":
                 mp3_data.extend(chunk["data"])
 
-        audio_seg = AudioSegment.from_file(io.BytesIO(bytes(mp3_data)), format="mp3")
-        audio_seg = audio_seg.set_frame_rate(self.sample_rate).set_channels(1)
-        samples = np.array(audio_seg.get_array_of_samples(), dtype=np.int16)
-        return samples
+        # Read MP3 data using soundfile
+        # edge-tts returns audio-24khz-48kbitrate-mono-mp3
+        audio_buffer = io.BytesIO(bytes(mp3_data))
+        audio_data, _original_sr = sf.read(audio_buffer, dtype="int16")
+
+        return audio_data
 
     def get_available_voices(self, language: str | None = None) -> list[dict[str, str]]:
         if language and language in _VOICES_BY_LANG:
